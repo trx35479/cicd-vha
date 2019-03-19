@@ -1,0 +1,52 @@
+# Unico Gradle
+FROM nexus3.dev.unico.com.au/unico-centos:6.10
+
+LABEL MAINTAINER="Frank Buttigieg <frank.buttigieg@unico.com.au>"
+
+# Set Environment Vars
+ENV JAVA_JDK_VERSION=1.8.0_192
+ENV JAVA_JDK_SHA1=072f66edc0c8b10e6998947f4861f9e92aa2f8ea
+ENV JAVA_HOME=/opt/jdk
+ENV GRADLE_VERSION=5.2.1
+ENV GRADLE_SHA256=748c33ff8d216736723be4037085b8dc342c6a0f309081acf682c9803e407357
+ENV PATH "${PATH}:/opt/gradle/bin:/opt/jdk/bin"
+
+# Install Deps
+RUN set -x \
+	&& yum update -y \
+	&& yum install -y \
+    unzip \
+    xz \
+	&& yum clean all
+
+# Install JDK
+RUN set -x \
+  && curl -O https://nexus3.dev.unico.com.au/repository/oracle-java/jdk/jdk-v${JAVA_JDK_VERSION}.tar.xz \
+  && sha1sum jdk-v${JAVA_JDK_VERSION}.tar.xz | grep -q ${JAVA_JDK_SHA1} \
+  && tar -Jtf jdk-v${JAVA_JDK_VERSION}.tar.xz &> /dev/null \
+  && tar -Jxf jdk-v${JAVA_JDK_VERSION}.tar.xz -C /opt \
+  && ln -s /opt/jdk-v${JAVA_JDK_VERSION} /opt/jdk \
+  && rm -f jdk-v${JAVA_JDK_VERSION}.tar.xz
+
+# Install Gradle 5
+RUN set -x \
+  && curl -O https://nexus3.dev.unico.com.au/repository/official-gradle-distributions/gradle-${GRADLE_VERSION}-bin.zip \
+  && sha256sum gradle-${GRADLE_VERSION}-bin.zip | grep -q ${GRADLE_SHA256} \
+  && unzip -qq -t gradle-${GRADLE_VERSION}-bin.zip \
+  && unzip -qq -d /opt gradle-${GRADLE_VERSION}-bin.zip \
+  && ln -s /opt/gradle-${GRADLE_VERSION} /opt/gradle \
+  && rm -f gradle-${GRADLE_VERSION}-bin.zip
+
+# Set Perms
+RUN set -x \
+  && find /opt -mindepth 1 -type d -exec chmod 755 {} \; \
+  && find /opt -mindepth 1 -type f -exec chmod 644 {} \; \
+  && find /opt/gradle/bin -type f -exec chmod +x {} \; \
+  && find /opt/jdk/bin -type f -exec chmod +x {} \;
+
+# Verify Install
+RUN set -x \
+  && java -version \
+  && gradle -v
+
+WORKDIR /workdir

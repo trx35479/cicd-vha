@@ -1,0 +1,17 @@
+FROM nexus3.dev.unico.com.au/unico-centos:7.5.1804
+LABEL MAINTAINER="Frank Buttigieg <frank.buttigieg@unico.com.au>"
+
+RUN set -x \
+  && yum update -y \
+  && yum-config-manager --enable epel \
+  && yum install -y \
+     gcc, epel-release, python-devel \
+  && yum install -y \
+     python-2.7.5, python-pip \
+  && pip install boto \
+  && pip install -I ansible==2.7.8 \
+  && yum -y install openssh-server openssh-clients \
+  && yum clean all \
+  && ansible --version
+
+WORKDIR /workdir

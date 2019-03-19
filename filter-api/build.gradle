@@ -1,0 +1,25 @@
+buildscript {
+    repositories {
+        mavenLocal()
+        maven {
+            url 'http://devtools.dev.unico.com.au/nexus/content/groups/public/'
+        }
+        jcenter()
+    }
+    dependencies {
+        classpath("org.springframework.boot:spring-boot-gradle-plugin:2.1.1.RELEASE")
+    }
+}
+
+plugins {
+    id 'base'
+    id 'war'
+    id 'ear'
+}
+
+apply from: "../utilities/build-common.gradle"
+apply plugin: 'org.springframework.boot'
+
+dependencies {
+	implementation("org.springframework.boot:spring-boot-starter-web:2.1.1.RELEASE")
+}

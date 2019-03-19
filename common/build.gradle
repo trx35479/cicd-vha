@@ -1,0 +1,12 @@
+plugins {
+  id 'java-library'
+}
+
+apply from: "../utilities/build-common.gradle"
+
+dependencies {
+
+annotationProcessor("org.projectlombok:lombok:${lombokVersion}")
+    // Lombok
+    compileOnly("org.projectlombok:lombok:${lombokVersion}")
+}

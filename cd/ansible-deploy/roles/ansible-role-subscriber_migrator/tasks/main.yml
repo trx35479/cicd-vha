@@ -1,0 +1,173 @@
+---
+
+- name: "Installing the Tomcat, Java and other Dependant Packages for this Deployment on the remote node"
+  include_role:
+    name: ansible-role-common
+    tasks_from: "{{ item }}"
+  with_items:
+      - installation.yml
+  when: installation == "true"
+
+- name: "Creating the {{ subscribermigrator_application_directory }} directory"
+  become: yes
+  become_user: root
+  file: "path={{ item }} state=directory recurse=yes owner=tomcat group=tomcat mode=0764"
+  with_items:
+      - "{{ subscribermigrator_application_directory }}"
+  when: installation == "true"
+
+- name: "Downloading Tomcat 8.5 Binary File from the Official Apache Repository"
+  become: yes
+  become_user: root
+  shell: "wget http://www-us.apache.org/dist/tomcat/tomcat-8/v8.5.38/bin/apache-tomcat-8.5.38.tar.gz -P /tmp/"
+  when: installation == "true"
+
+- name: "Extracting the Tomcat 8.5 Binary File from the Official Apache Repository to {{ subscribermigrator_application_directory }}"
+  become: yes
+  become_user: root
+  shell: "sudo -u tomcat tar -zxvf /tmp/apache-tomcat-8.5.38.tar.gz -C {{ subscribermigrator_application_directory }} --strip-components=1"
+  when: installation == "true"
+
+- name: "Removing the /tmp/apache-tomcat-8.5.38.tar.gz file from the remote node"
+  become: yes
+  become_user: root
+  file:
+   state: absent
+   path: "/tmp/apache-tomcat-8.5.38.tar.gz"
+  when: installation == "true"
+
+- name: "Setting the Ownership and Group Permissions for the {{ subscribermigrator_application_directory }}/conf directory"
+  become: yes
+  become_user: root
+  file: "path={{ item }} state=directory recurse=yes owner=tomcat group=tomcat mode=0774"
+  with_items:
+      - "{{ subscribermigrator_application_directory }}/conf"
+
+- name: "Setting the Recursive Ownership and Group Permissions for the {{ subscribermigrator_application_directory }}/conf/* directory"
+  become: yes
+  become_user: root
+  file: "path={{ item }} state=directory recurse=yes owner=tomcat group=tomcat mode=0444"
+  with_items:
+      - "{{ subscribermigrator_application_directory }}/conf/*"
+
+- name: "Setting the Recursive Ownership and Group Permissions for the {{ subscribermigrator_application_directory }}/conf directory"
+  become: yes
+  become_user: root
+  file: "path={{ item }} state=directory recurse=yes owner=tomcat group=tomcat"
+  with_items:
+      - "{{ subscribermigrator_application_directory }}/logs/"
+      - "{{ subscribermigrator_application_directory }}/temp/"
+      - "{{ subscribermigrator_application_directory }}/webapps/"
+      - "{{ subscribermigrator_application_directory }}/work/"
+      - "{{ subscribermigrator_application_directory }}/bin/"
+      - "{{ subscribermigrator_application_directory }}/lib/"
+
+- name: "Setting the  Ownership and Group Permissions for the {{ subscribermigrator_application_directory }}/bin/ directory"
+  become: yes
+  become_user: root
+  file: "path={{ item }} state=directory recurse=yes owner=tomcat group=tomcat mode=0774"
+  with_items:
+      - "{{ subscribermigrator_application_directory }}/bin/"
+
+- name: "Setting the Recursive Ownership and Group Permissions for the {{ subscribermigrator_application_directory }}/bin/ directory"
+  become: yes
+  become_user: root
+  file: "path={{ item }} state=directory recurse=yes owner=tomcat group=tomcat mode=0444"
+  with_items:
+      - "{{ subscribermigrator_application_directory }}/bin/*"
+
+- name: 'Copying the Build Artefact for {{ component }} to the {{ subscribermigrator_application_directory }}/webapps directory '
+  become: yes
+  become_user: root
+  copy:
+    src: "../../../build_artefacts/{{ component }}.war"
+    dest: "{{ subscribermigrator_application_directory }}/webapps/{{ component }}.war"
+    owner: "tomcat"
+    group: "tomcat"
+    mode: 0644
+
+- name: "Deploying the latest version of the System Service File  for the Subscriber Migrator Tomcat Service"
+  become: yes
+  become_user: root
+  template: "src=../templates/service_files/{{ component }}-servicefile.j2 dest=/etc/systemd/system/{{ component }}.service owner=root group=tomcat mode=0664 force=yes"
+
+- name: "Deploying the latest version of the {{ subscribermigrator_application_directory }}/conf/server.xml File for the Subscriber Migrator Tomcat Service"
+  become: yes
+  become_user: root
+  template: "src=../templates/app_config/conf-server.xml.j2 dest={{ subscribermigrator_application_directory }}/conf/server.xml owner=tomcat group=tomcat force=yes"
+
+- name: "Reloading the SystemD service"
+  become: yes
+  become_user: root
+  shell: "systemctl daemon-reload"
+
+#- name: "Tomcat | Allow Incoming Requests to Port {{ subscribermigrator_connector_port }} through FirewallD"
+#  become: yes
+#  become_user: root
+#  firewalld:
+#    zone: public
+#    port: "{{ subscribermigrator_connector_port }}/tcp"
+#    permanent: yes
+#    state: enabled
+
+#- name: "Reloading the FirewallD service"
+#  become: yes
+#  become_user: root
+#  shell: "firewall-cmd --reload"
+
+- name: "Setting the {{ component }} service to always start when the VM reboots"
+  become_user: root
+  become: yes
+  service:
+    name: "{{ component }}"
+    enabled: yes
+
+- name: "Stopping the {{ component }} service on the Migration Tool Node"
+  become_user: root
+  become: yes
+  service:
+    name: "{{ component }}"
+    state: stopped
+
+- name: "Ansible is Sleeping for 5 seconds before restarting the {{ component }} service on the Migration Tool Node"
+  wait_for: timeout=5
+
+- name: "Starting the {{ component }} service on the Migration Tool Node"
+  become_user: root
+  become: yes
+  service:
+    name: "{{ component }}"
+    state: started
+
+- name: "Deploying the latest version of the {{ subscribermigrator_application_directory }}/webapps/{{ component }}/WEB-INF/classes/application.properties File for the Subscriber Migrator Tomcat Service"
+  become: yes
+  become_user: root
+  template: "src=../templates/app_config/application.properties.j2 dest={{ subscribermigrator_application_directory }}/webapps/{{ component }}/WEB-INF/classes/application.properties owner=tomcat group=tomcat force=yes"
+
+- name: "Stopping the {{ component }} service on the Migration Tool Node"
+  become_user: root
+  become: yes
+  service:
+    name: "{{ component }}"
+    state: stopped
+
+- name: "Ansible is Sleeping for 5 seconds before restarting the {{ component }} service on the Migration Tool Node"
+  wait_for: timeout=5
+
+- name: "Starting the {{ component }} service on the Migration Tool Node"
+  become_user: root
+  become: yes
+  service:
+    name: "{{ component }}"
+    state: started
+
+- name: "{{ component }} | Confirming that the {{ component }} Service was successfully Deployed and Can Service Basic Requests"
+  become: yes
+  become_user: root
+  uri:
+    url: "http://localhost:{{ subscribermigrator_connector_port }}/{{ component }}/"
+    method: GET
+    status_code: 200,201,202,404
+  register: tomcat_servicepage_check
+  retries: 6
+  delay: 10

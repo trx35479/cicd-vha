@@ -1,0 +1,47 @@
+---
+
+- include: installation.yml
+  when: installation == "true"
+
+- name: "Ensuring that the directory {{ common_application_directory }} is present and with the correct permissions"
+  become: yes
+  become_user: root
+  file: "path={{ item }} state=directory recurse=yes owner={{ application_user }} group={{ application_user }} mode=0764"
+  with_items:
+      - "{{ common_application_directory }}"
+
+- name: "Copying the Build Artefact for this release to the {{ common_application_directory }} directory"
+  become: yes
+  become_user: root
+  copy:
+   src: "{{ item }}"
+   dest: "{{ common_application_directory }}"
+   mode: 0764
+   owner: "{{ application_user }}"
+   group: "{{ application_user }}"
+  with_fileglob:
+    - "../../../build_artefacts/common.jar"
+
+- name: "Deploying the latest version of the System Service File for the Common Component"
+  become: yes
+  become_user: root
+  template: "src=../templates/service_files/common-servicefile.j2 dest=/etc/systemd/system/common.service owner=root group=vodaphone mode=0664 force=yes"
+
+- name: "Reloading the SystemD service"
+  become: yes
+  become_user: root
+  shell: "systemctl daemon-reload"
+
+- name: "Setting the Vodaphone Common service to always start when the VM reboots"
+  become_user: root
+  become: yes
+  service:
+    name: common
+    enabled: yes
+
+- name: "Restarting the Common service on the Migration Tool Node"
+  become_user: root
+  become: yes
+  service:
+    name: common
+    state: restarted

@@ -1,0 +1,46 @@
+---
+
+- name: "Creating the /tmp/aws-build-scripts directory if it doesn't exist"
+  file: "path={{ item }} state=present"
+   with_items:
+     - "/tmp/aws-build-scripts"
+
+# The assumption for the steps below is that the 'aws-cli-setup.yml' playbook has already run to extract the keys and sensitive files required to perform the steps below
+
+- name: VHA Ansible Vault | AWS Build Scripts Private Key | Changing permissions to 400
+  file: "path={{item}} mode=0400"
+   with_items:
+     - "~/.ssh/aws-build-scripts.key"
+
+- name: VHA Ansible Vault | .ec2-user.pem Key | Changing permissions to 400
+  file: "path={{item}} mode=0400"
+   with_items:
+     - "/tmp/aws-build-scripts/aws-build-scripts/.ec2-user.pem"
+
+- name: "Creating an SSH Session/Agent and Adding the Private Keys from the previous tasks"
+  shell: "eval $(ssh-agent) && ssh-add ~/.ssh/aws-build-scripts.key && ssh-add /tmp/aws-build-scripts/aws-build-scripts/.ec2-user.pem"
+
+- name: "Cloning the 'AWS-Build-Scripts' Repo from the Unico Ansible Project in Stash.dev.unico.com.au"
+  git:
+    repo: ssh://git@stash.dev.unico.com.au/unians/aws-build-scripts.git
+    dest: /tmp/aws-build-scripts
+
+- name: "Running thhe Ansible Playbook from the Unico-Ansible - 'aws-build-scripts' repo to Integrate this node with AD"
+  shell: "cd /tmp/aws-build-scripts/aws-build-scripts && ansible-playbook -v -i inventory/dyn  playbooks/configure_ldap_client.yml  -u centos --private-key=.ec2-user.pem  --limit {{ ec2_private_ip_address }}"
+
+- name: "Running the Ansible Playbook from the Unico-Ansible - 'aws-build-scripts' repo to Perform Basic Security Hardening, Install Default Packages and Setup Cloudwatch"
+  shell: "cd /tmp/aws-build-scripts/aws-build-scripts && ansible-playbook -v -i inventory/dyn  playbooks/base.yml  -u centos --private-key=.ec2-user.pem  --limit {{ ec2_private_ip_address }}"
+
+- name: "Deleting the /tmp/aws-build-scripts directory"
+  file: "path={{ item }} state=present"
+   with_items:
+     - "/tmp/aws-build-scripts"
+
+- name: "Removing the .~/.ssh/aws-build-scripts.key"
+  file: "path={{ item }} state=present"
+   with_items:
+     - "~/.ssh/aws-build-scripts.key"
+
+
+Option 1: I run the scripts from the ansible docker container
+Option 2: I run the scripts on the remote node via shell with ansible

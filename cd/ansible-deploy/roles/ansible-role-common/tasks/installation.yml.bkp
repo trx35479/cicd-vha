@@ -1,0 +1,169 @@
+---
+
+- name: Install java-1.8.0-openjdk package through yum
+  become: yes
+  become_user: root
+  yum: pkg=java-1.8.0-openjdk state=installed
+
+- name: Get the Implementation number for java-1.8.0-openjdk on this host
+  shell: "update-alternatives --display java | grep '^/' | awk '{print $1}' | grep 1.8.0"
+  become: yes
+  become_user: root
+  register: java_full_path
+  failed_when: False
+  changed_when: False
+
+- name: Set java-1.8.0-openjdk to be the Default Implementation of Java on this Host
+  become: yes
+  become_user: root
+  alternatives:
+    name: java
+    path: "{{ java_full_path.stdout }}"
+    link: /usr/bin/java
+  when: java_full_path is defined
+
+- name: Install 'epel-release' package through yum
+  become: yes
+  become_user: root
+  yum: pkg=epel-release state=installed
+
+- name: Install 'wget' package through yum
+  become: yes
+  become_user: root
+  yum: pkg=wget state=installed
+
+- name: Ensuring that the 'tomcat' group exists on the Migration Tool Node
+  become: yes
+  become_user: root
+  group:
+    name: tomcat
+    state: present
+
+- name: Creating the Tomcat User and Adding it to the 'Tomcat' Group
+  become: yes
+  become_user: root
+  user:
+    name: tomcat
+    shell: /bin/nologin
+    groups: tomcat
+    home: /opt/tomcat
+
+- name: "Creating the /opt/tomcat directory"
+  become: yes
+  become_user: root
+  file: "path={{ item }} state=directory recurse=yes owner=tomcat group=tomcat mode=0764"
+  with_items:
+      - "/opt/tomcat"
+
+- name: "Downloading Tomcat 8.5 Binary File from the Official Apache Repository"
+  become: yes
+  become_user: root
+  shell: "~ && wget http://www-us.apache.org/dist/tomcat/tomcat-8/v8.5.38/src/apache-tomcat-8.5.38-src.tar.gz"
+
+- name: "Extracting the Tomcat 8.5 Binary File from the Official Apache Repository to /opt/tomcat"
+  become: yes
+  become_user: root
+  shell: "tar -zxvf apache-tomcat-8.0.33.tar.gz -C /opt/tomcat --strip-components=1"
+
+
+- name: "Setting the Ownership and Group Permissions for the /opt/tomcat/conf directory"
+  become: yes
+  become_user: root
+  file: "path={{ item }} state=directory recurse=yes owner=tomcat group=tomcat mode=0774"
+  with_items:
+      - "/opt/tomcat/conf"
+
+- name: "Setting the Recursive Ownership and Group Permissions for the /opt/tomcat/conf/* directory"
+  become: yes
+  become_user: root
+  file: "path={{ item }} state=directory recurse=yes owner=tomcat group=tomcat mode=0444"
+  with_items:
+      - "/opt/tomcat/conf/*"
+
+- name: "Setting the Recursive Ownership and Group Permissions for the /opt/tomcat/conf directory"
+  become: yes
+  become_user: root
+  file: "path={{ item }} state=directory recurse=yes owner=tomcat group=tomcat"
+  with_items:
+      - "/opt/tomcat/logs/"
+      - "/opt/tomcat/temp/"
+      - "/opt/tomcat/webapps/"
+      - "/opt/tomcat/work/"
+      - "/opt/tomcat/bin/"
+      - "/opt/tomcat/lib/"
+
+- name: "Setting the  Ownership and Group Permissions for the /opt/tomcat/bin/ directory"
+  become: yes
+  become_user: root
+  file: "path={{ item }} state=directory recurse=yes owner=tomcat group=tomcat mode=0774"
+  with_items:
+      - "/opt/tomcat/bin/"
+
+- name: "Setting the Recursive Ownership and Group Permissions for the /opt/tomcat/bin/ directory"
+  become: yes
+  become_user: root
+  file: "path={{ item }} state=directory recurse=yes owner=tomcat group=tomcat mode=0444"
+  with_items:
+      - "/opt/tomcat/bin/*"
+
+- name: "Deploying the latest version of the System Service File for the Tomcat Service"
+  become: yes
+  become_user: root
+  template: "src=../templates/service_files/tomcat-servicefile.j2 dest=/etc/systemd/system/tomcat.service owner=root group=tomcat mode=0664 force=yes"
+
+- name: Install 'havaged' package through yum
+  become: yes
+  become_user: root
+  yum: pkg=havaged state=installed
+
+- name: "Setting the Havaged service to always start when the VM reboots"
+  become_user: root
+  become: yes
+  service:
+    name: havaged
+    enabled: yes
+
+- name: "Restarting the Havaged service on the Migration Tool Node"
+  become_user: root
+  become: yes
+  service:
+    name: havaged
+    state: restarted
+
+- name: "Setting the Tomcat service to always start when the VM reboots"
+  become_user: root
+  become: yes
+  service:
+    name: tomcat
+    enabled: yes
+
+- name: "Restarting the Tomcat service on the Migration Tool Node"
+  become_user: root
+  become: yes
+  service:
+    name: tomcat
+    state: restarted
+
+- name: "Reloading the SystemD service"
+  become: yes
+  become_user: root
+  shell: "systemctl daemon-reload"
+
+- name: "Tomcat | Allow Incoming Requests to Port 8080 through FirewallD"
+  firewalld:
+    zone: public
+    port: 8080/tcp
+    state: present
+    permanent: yes
+
+- name: "Reloading the FirewallD service"
+  become: yes
+  become_user: root
+  shell: "firewall-cmd --reload"
+
+- name: Tomcat | Confirming that the Apache Tomcat Service can Service Basic Requests
+  uri:
+    url: "http://localhost:8080/"
+    method: GET
+    status_code: 200,201,202,404
+  register: tomcat_servicepage_check

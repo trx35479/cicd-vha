@@ -1,0 +1,44 @@
+---
+- hosts: 127.0.0.1
+  connection: local
+  gather_facts: yes
+#  become_user: root
+#  become: true
+  vars_files:
+    - environment/{{ environment_name }}/vars/{{ environment_name }}_vault.yml
+  tasks:
+   ######################################################################################################################
+      #  Create SSH agent with SSH key for Jenkins user
+    ######################################################################################################################
+    - name: "Creating an SSH Session/Agent and Adding the Private Key from the previous task"
+      shell: "eval $(ssh-agent) && ssh-add ~/.ssh/jenkins.key"
+
+#    - name: "Testing the Retrieval of AWS Dynamic Inventory"
+#      shell: "python ec2.py --list --refresh-cache > aws-dynamicinventory-output.txt"
+
+- hosts: tag_Name_vhadslave
+  #become: yes
+  gather_facts: yes
+  become_user: fbuttigi
+  vars_files:
+    - environment/{{ environment_name }}/vars/{{ environment_name }}_vault.yml
+    - environment/{{ environment_name }}/vars/{{ environment_name }}_vars.yml
+  roles:
+    - common
+  tags: filter_api
+
+######################################################################################################################
+#  Clean up application files on Runner
+######################################################################################################################
+- hosts: 127.0.0.1
+  gather_facts: no
+  connection: local
+  tasks:
+    - name: "Removing the ~/.ssh/jenkins.key file from the node which ran the Deployment"
+      file:
+       state: absent
+       path: "~/.ssh/jenkins.key"
+    - name: "Removing the AWS-CLI-Profile for this VHA environment from the Ansible Docker Container"
+      file:
+        state: absent
+        path: "~/.boto"

@@ -1,0 +1,189 @@
+#!/usr/bin/env groovy
+
+pipeline {
+  agent {
+    node {
+    label 'vodaphone-vha-jenkins-dslave'
+    }
+  }
+  options {
+    timeout time: 40, unit: 'MINUTES'
+  }
+  stages {
+      stage('Cleaning the Workspace') {
+            steps {
+                step([$class: 'WsCleanup'])
+                checkout scm
+            }
+        }
+      stage('Git Checkout - FilterAPI, Common and Utilities Repo') {
+      steps {
+        sh 'rm -rf common utilities filter-api'
+        sh '/bin/mkdir -p common utilities filter-api'
+          dir('common') {
+            git(credentialsId: 'vodaphone-vha-keypair', url: 'ssh://git@stash.dev.unico.com.au/vod/common.git', branch: '${common_branch}')
+          }
+           dir('utilities') {
+            git(credentialsId: 'vodaphone-vha-keypair', url: 'ssh://git@stash.dev.unico.com.au/vod/utilities.git', branch: '${utilities_branch}')
+          }
+           dir('filter-api') {
+            git(credentialsId: 'vodaphone-vha-keypair', url: 'ssh://git@stash.dev.unico.com.au/vod/filter-api.git', branch: '${filterapi_branch}')
+          }
+       }
+    }
+     stage('Copying the Environment Variable File for CI/CD Pipeline Build') {
+      steps {
+        sh '/bin/cp -prf ci/config/filter-api/* .'
+        // sh 'mkdir -p filter-api/build/libs'
+        // sh 'cp -pr /opt/gradle_workaround/build/libs/* filter-api/build/libs'
+       }
+    }
+     stage('Pre-Build - Docker Images - All Components') {
+      environment {
+      	nexus_auth = credentials("vodaphone-vha-nexus3")
+      }
+      steps {
+         sh 'bash scripts/pre-build.sh'
+      }
+      }
+     stage('Build & Unit Test - Filter API') {
+       environment {
+    stash_auth = credentials("e7f2a49d-2772-48db-8836-453ec2cea3d7")
+  }
+      steps {
+        sh 'bash scripts/scm-build-status.sh BUILD INPROGRESS'
+        sh 'bash scripts/build.sh'
+      }
+      post {
+        success {
+          sh 'bash scripts/scm-build-status.sh BUILD SUCCESSFUL'
+        }
+        failure {
+          sh 'bash scripts/scm-build-status.sh BUILD FAILED'
+        }
+      }
+    }
+       stage('Nexus IQ and SonarQube Scan') {
+       parallel {
+            stage('SonarQube Scan') {
+              environment {
+                nexus_auth = credentials("vodaphone-vha-nexus3")
+                sonar_token = credentials("vodaphone-vha-sonar")
+                stash_auth = credentials("e7f2a49d-2772-48db-8836-453ec2cea3d7")
+              }
+              steps {
+                sh 'bash scripts/scm-build-status.sh SONAR INPROGRESS'
+                sh 'bash scripts/sonar-scan.sh ${BUILD_NUMBER}'
+              }
+              post {
+                success {
+                  sh 'bash scripts/scm-build-status.sh SONAR SUCCESSFUL'
+                }
+                failure {
+                  sh 'bash scripts/scm-build-status.sh SONAR FAILED'
+                }
+              }
+            }
+            stage('Nexus IQ Scan') {
+               environment {
+                nexus_auth = credentials("vodaphone-vha-nexus3")
+                stash_auth = credentials("e7f2a49d-2772-48db-8836-453ec2cea3d7")
+              }
+              steps {
+                echo 'Starting Nexus IQ Scan'
+                sh 'bash scripts/scm-build-status.sh IQ INPROGRESS'
+                nexusPolicyEvaluation failBuildOnNetworkError: false, iqApplication: 'vodaphone-vha-filter-api', iqStage: 'build', jobCredentialsId: 'VODAPHONE-VHA-IQSERVICE'
+              }
+              post {
+                success {
+                  sh 'bash scripts/scm-build-status.sh IQ SUCCESSFUL'
+                }
+                failure {
+                  sh 'bash scripts/scm-build-status.sh IQ FAILED'
+                }
+              }
+            }
+      }
+    }
+     stage('Terraform - Development Environment') {
+                 environment {
+                AWS_DEFAULT_REGION = "ap-southeast-2"
+                AWS_PROFILE = "default"
+            }
+      steps
+          {
+            dir('terraform-aws')
+               {
+                   dir('dev')
+                   {
+                           withCredentials([file(credentialsId: 'AWS_EC2USER_PEMFILE', variable: 'AWS_EC2USER_PEMFILE')])
+                                   {
+                                         sh 'rm -f ../files/.ec2-user.pem'
+                                         sh "mv $AWS_EC2USER_PEMFILE ../files/.ec2-user.pem"
+                                         sh 'bash ../../scripts/terraform.sh Dev'
+                                 }
+                         }
+                   }
+              }
+            }
+          stage('Ansible Security Hardening')
+                    {
+          steps {
+             sh 'rm -Rf aws-build-scripts'
+             sh 'mkdir -p aws-build-scripts'
+             dir('aws-build-scripts')
+                   {
+                   git(credentialsId: 'aws-build-scripts', url: 'ssh://git@stash.dev.unico.com.au/unians/aws-build-scripts.git', branch: 'master')
+                   withCredentials([file(credentialsId: 'AWS_JENKINS_PRIVATEKEY', variable: 'AWS_JENKINS_PRIVATEKEY')])
+                                  {
+                                      sh "mv $AWS_JENKINS_PRIVATEKEY jenkins.key"
+                                      sh "chmod 400 jenkins.key"
+                                      sh 'bash ../scripts/ansible-securityhardening.sh Dev'
+                               }
+                  }
+          sh 'rm -Rf aws-build-scripts'
+        }
+        }
+     stage('Build RPM to Publish to Nexus') {
+      environment {
+      	nexus_auth = credentials("vodaphone-vha-nexus3")
+      }
+                when {
+                 expression
+                        {
+                            params.filterapi_branch.contains("release")
+                         }
+                }
+      steps {
+         sh "bash scripts/package.sh ${params.release_version} ${BUILD_NUMBER}"
+      }
+    }
+     stage('Publish') {
+      environment {
+      	nexus_auth = credentials("vodaphone-vha-nexus3")
+      }
+          when {
+                 expression
+                        {
+                            params.filterapi_branch.contains("release")
+                         }
+                }
+      steps {
+        sh 'bash scripts/publish.sh'
+      }
+    }
+     stage('Ansible Deployment for Filter API Component') {
+       environment {
+                  stash_auth = credentials("e7f2a49d-2772-48db-8836-453ec2cea3d7")
+          }
+      steps {
+          withCredentials([string(credentialsId: 'VODAPHONE_VHA_ANSIBLEVAULT_PASSWD', variable: 'VODAPHONE_VHA_ANSIBLEVAULT_PASSWD')])
+                {
+        sh 'rm -f cd/ansible-deploy/vault.txt'
+        sh 'echo "$VODAPHONE_VHA_ANSIBLEVAULT_PASSWD" > "cd/ansible-deploy/vault.txt"'
+      }
+        sh "bash scripts/ansible-playbook.sh Dev"
+      }
+    }
+}
+}

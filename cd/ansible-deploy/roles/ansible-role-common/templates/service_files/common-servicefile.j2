@@ -1,0 +1,16 @@
+[Unit]
+Description=Vodaphone Common
+After=network.target
+
+[Service]
+Type=simple
+# Another Type option: forking
+User=vodaphone
+Group=vodaphone
+WorkingDirectory={{ common_application_directory }}
+ExecStart=/bin/bash -c "java -jar common.jar"
+Restart=always
+# Other Restart options: or always, on-abort, etc
+
+[Install]
+WantedBy=multi-user.target

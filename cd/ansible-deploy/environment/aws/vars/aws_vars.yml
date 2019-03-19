@@ -1,0 +1,24 @@
+############ General Variables ##################
+installation: "true"
+
+########### Filter API Variables ##################
+filterapi_application_directory: "/opt/vha/{{ component }}"
+filterapi_server_port: "8006"
+filterapi_connector_port: "8081"
+
+########### Batch Manager  Variables ##################
+batchmanager_application_directory: "/opt/vha/{{ component }}"
+batchmanager_server_port: "8005"
+batchmanager_connector_port: "8080"
+
+########### Subscriber Loader Variables ##################
+
+subscriberloader_application_directory: "/opt/vha/{{ component }}"
+subscriberloader_server_port: "8007"
+subscriberloader_connector_port: "8082"
+
+########### Subscriber Migrator Variables ##################
+
+subscribermigrator_application_directory: "/opt/vha/{{ component }}"
+subscribermigrator_server_port: "8008"
+subscribermigrator_connector_port: "8083"

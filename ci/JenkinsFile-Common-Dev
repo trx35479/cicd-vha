@@ -1,0 +1,89 @@
+#!/usr/bin/env groovy
+
+pipeline {
+  agent {
+    node {
+    label 'vodaphone-vha-jenkins-dslave'
+    }
+  }
+  options {
+    timeout time: 40, unit: 'MINUTES'
+  }
+  stages {
+      stage('Cleaning the Workspace') {
+            steps {
+                step([$class: 'WsCleanup'])
+                checkout scm
+            }
+        }
+      stage('Git Checkout - Common and Utilities Repo') {
+      steps {
+        sh 'rm -rf common utilities'
+        sh '/bin/mkdir -p common utilities filter-api'
+          dir('common') {
+            git(credentialsId: 'vodaphone-vha-keypair', url: 'ssh://git@stash.dev.unico.com.au/vod/common.git', branch: '${common_branch}')
+          }
+           dir('utilities') {
+            git(credentialsId: 'vodaphone-vha-keypair', url: 'ssh://git@stash.dev.unico.com.au/vod/utilities.git', branch: '${utilities_branch}')
+          }
+       }
+    }
+     stage('Copying the Environment Variable File for CI/CD Pipeline Build') {
+      steps {
+        sh '/bin/cp -prf ci/config/common/* .'
+       }
+    }
+     stage('Pre-Build - Docker Images - All Components') {
+      environment {
+      	nexus_auth = credentials("vodaphone-vha-nexus3")
+      }
+      steps {
+         sh 'bash scripts/pre-build.sh'
+      }
+    }
+     stage('Build & Unit Test - Common') {
+       environment {
+    stash_auth = credentials("e7f2a49d-2772-48db-8836-453ec2cea3d7")
+  }
+      steps {
+        sh 'bash scripts/scm-build-status.sh BUILD INPROGRESS'
+        sh 'bash scripts/build.sh'
+      }
+      post {
+        success {
+          sh 'bash scripts/scm-build-status.sh BUILD SUCCESSFUL'
+        }
+        failure {
+          sh 'bash scripts/scm-build-status.sh BUILD FAILED'
+        }
+      }
+    }
+     stage('Build RPM to Publish to Nexus') {
+      environment {
+      	nexus_auth = credentials("vodaphone-vha-nexus3")
+      }
+      steps {
+         sh "bash scripts/package.sh ${params.release_version} ${BUILD_NUMBER}"
+      }
+    }
+     stage('Publish') {
+      environment {
+      	nexus_auth = credentials("vodaphone-vha-nexus3")
+      }/*
+      when {
+        branch 'release/*'
+      }*/
+      steps {
+        sh 'bash scripts/publish.sh'
+      }
+    }
+     stage('Ansible Deployment for Common Component') {
+       environment {
+    stash_auth = credentials("e7f2a49d-2772-48db-8836-453ec2cea3d7")
+  }
+      steps {
+        sh "bash scripts/ansible-playbook.sh"
+      }
+    }
+}
+}

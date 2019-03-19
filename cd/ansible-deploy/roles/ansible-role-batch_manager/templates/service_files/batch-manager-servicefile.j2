@@ -1,0 +1,22 @@
+[Unit]
+Description= Vodaphone Batch Manager Component Service File
+After=syslog.target network.target
+
+[Service]
+Type=forking
+
+#Environment=JAVA_HOME=/usr/lib/jvm/jre
+Environment=CATALINA_PID={{ batchmanager_application_directory }}/temp/tomcat.pid
+Environment=CATALINA_HOME={{ batchmanager_application_directory }}
+Environment=CATALINA_BASE={{ batchmanager_application_directory }}
+Environment='CATALINA_OPTS=-Xms512M -Xmx1024M -server -XX:+UseParallelGC'
+Environment='JAVA_OPTS=-Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom'
+
+ExecStart={{ batchmanager_application_directory }}/bin/startup.sh
+ExecStop={{ batchmanager_application_directory }}/bin/shutdown.sh
+
+User=tomcat
+Group=tomcat
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,47 @@
+FROM nexus3.dev.unico.com.au/unico-centos:7.5.1804
+LABEL maintainer "Brendan Hubble <brendan.hubble@unico.com.au>"
+
+RUN set -x \
+  && yum update -y \
+  && yum-config-manager --enable epel \
+  && yum install -y \
+    python \
+    python-pip \
+    python-lxml \
+    python-cffi \
+    python-bcrypt \
+    python-cryptography \
+    pyOpenSSL \
+    ca-certificates \
+    openssl-devel
+
+COPY config/docker/python/etc_pip.conf /etc/pip.conf
+
+RUN set -x \
+  && pip install \
+    pynacl \
+    robotframework \
+    requests \
+    pymysql \
+    pyyaml \
+    robotframework-requests \
+    robotframework-sshlibrary \
+    robotframework-sudslibrary \
+    robotframework-jsonlibrary \
+    robotframework-databaselibrary \
+    robotframework-pycurllibrary \
+    pytz
+
+# Configure Robot User
+RUN set -x \
+	&& useradd \
+		-r \
+		-m \
+		-d /robot \
+		-s /bin/bash \
+		-c "Robot user" \
+		robot
+
+USER robot
+
+WORKDIR /robot

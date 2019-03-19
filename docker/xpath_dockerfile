@@ -1,0 +1,13 @@
+FROM nexus3.dev.unico.com.au/unico-centos:7.5.1804
+LABEL maintainer "Brendan Hubble <brendan.hubble@unico.com.au>"
+
+ENV PATH=${PATH}:/usr/bin
+
+RUN set -x \
+  && yum update -y \
+  && yum-config-manager --enable epel \
+  && yum install -y perl-XML-XPath
+
+COPY config/docker/xpath/xpath.pl /usr/bin/xpath
+
+WORKDIR /workdir

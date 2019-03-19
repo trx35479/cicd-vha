@@ -1,0 +1,209 @@
+#!/usr/bin/env groovy
+
+pipeline {
+  agent {
+    node {
+    label 'vodaphone-vha-jenkins-dslave'
+    }
+  }
+  options {
+    timeout time: 40, unit: 'MINUTES'
+  }
+  stages {
+      stage('Cleaning the Workspace') {
+            steps {
+                step([$class: 'WsCleanup'])
+                checkout scm
+            }
+        }
+      stage('Git Checkout - CICD, Common and Utilities Repo') {
+      steps {
+        sh 'mkdir -p batch-manager'
+        sh "rsync -avz --exclude 'batch-manager' . batch-manager"
+        sh 'rm -rf common utilities cicd'
+        sh '/bin/mkdir -p common utilities cicd'
+          dir('common') {
+            git(credentialsId: 'vodaphone-vha-keypair', url: 'ssh://git@stash.dev.unico.com.au/vod/common.git', branch: 'master')
+          }
+           dir('utilities') {
+            git(credentialsId: 'vodaphone-vha-keypair', url: 'ssh://git@stash.dev.unico.com.au/vod/utilities.git', branch: 'master')
+          }
+           dir('cicd') {
+            git(credentialsId: 'vodaphone-vha-keypair', url: 'ssh://git@stash.dev.unico.com.au/vod/cicd.git', branch: 'master')
+          }
+       }
+    }
+     stage('Copying the required files from the CICD repo to Deploy the Batch Manager Component') {
+      steps {
+        sh '/bin/cp -prf cicd/* .'
+        sh '/bin/cp -prf cicd/ci/config/batch-manager/* .'
+       }
+    }
+	 stage('Pre-Build - Docker Images - All Components') {
+      environment {
+      	nexus_auth = credentials("vodaphone-vha-nexus3")
+      }
+      steps {
+         sh 'bash cicd/scripts/pre-build.sh'
+      }
+    }
+    stage('Build & Unit Test - Batch Manager') {
+       environment {
+    stash_auth = credentials("e7f2a49d-2772-48db-8836-453ec2cea3d7")
+  }
+      steps {
+        sh 'bash scripts/scm-build-status.sh BUILD INPROGRESS'
+        sh 'bash scripts/build.sh'
+      }
+      post {
+        success {
+          sh 'bash scripts/scm-build-status.sh BUILD SUCCESSFUL'
+        }
+        failure {
+          sh 'bash scripts/scm-build-status.sh BUILD FAILED'
+        }
+      }
+    }
+       stage('Nexus IQ and SonarQube Scan') {
+       parallel {
+            stage('SonarQube Scan') {
+              environment {
+                nexus_auth = credentials("vodaphone-vha-nexus3")
+                sonar_token = credentials("vodaphone-vha-sonar")
+                stash_auth = credentials("e7f2a49d-2772-48db-8836-453ec2cea3d7")
+              }
+              steps {
+                sh 'bash scripts/scm-build-status.sh SONAR INPROGRESS'
+                sh 'bash scripts/sonar-scan.sh ${BUILD_NUMBER}'
+              }
+              post {
+                success {
+                  sh 'bash scripts/scm-build-status.sh SONAR SUCCESSFUL'
+                }
+                failure {
+                  sh 'bash scripts/scm-build-status.sh SONAR FAILED'
+                }
+              }
+            }
+            stage('Nexus IQ Scan') {
+               environment {
+                nexus_auth = credentials("vodaphone-vha-nexus3")
+                stash_auth = credentials("e7f2a49d-2772-48db-8836-453ec2cea3d7")
+              }
+              steps {
+                echo 'Starting Nexus IQ Scan'
+                sh 'bash scripts/scm-build-status.sh IQ INPROGRESS'
+                nexusPolicyEvaluation failBuildOnNetworkError: false, iqApplication: 'vodaphone-vha-batch-manager', iqStage: 'build', jobCredentialsId: 'VODAPHONE-VHA-IQSERVICE'
+              }
+              post {
+                success {
+                  sh 'bash scripts/scm-build-status.sh IQ SUCCESSFUL'
+                }
+                failure {
+                  sh 'bash scripts/scm-build-status.sh IQ FAILED'
+                }
+              }
+            }
+      }
+    }
+     stage('Terraform - Story Environment') {
+                 environment {
+                AWS_DEFAULT_REGION = "ap-southeast-2"
+                AWS_PROFILE = "default"
+            }
+                when {
+                 expression
+                        {
+                            env.CHANGE_BRANCH.contains("story")
+                         }
+                }
+      steps
+          {
+            dir('terraform-aws')
+               {
+                   dir('story')
+                   {
+                           withCredentials([file(credentialsId: 'AWS_EC2USER_PEMFILE', variable: 'AWS_EC2USER_PEMFILE')])
+                                   {
+                                         sh 'rm -f ../files/.ec2-user.pem'
+                                         sh "mv $AWS_EC2USER_PEMFILE ../files/.ec2-user.pem"
+                                         sh 'bash ../../scripts/terraform.sh Story'
+                                 }
+                         }
+                   }
+              }
+            }
+          stage('Ansible Security Hardening')
+                    {
+              when {
+                 expression
+                        {
+                            env.CHANGE_BRANCH.contains("story")
+                         }
+                }
+          steps {
+             sh 'rm -Rf aws-build-scripts'
+             sh 'mkdir -p aws-build-scripts'
+             dir('aws-build-scripts')
+                   {
+                   git(credentialsId: 'aws-build-scripts', url: 'ssh://git@stash.dev.unico.com.au/unians/aws-build-scripts.git', branch: 'master')
+                   withCredentials([file(credentialsId: 'AWS_JENKINS_PRIVATEKEY', variable: 'AWS_JENKINS_PRIVATEKEY')])
+                                  {
+                                      sh "mv $AWS_JENKINS_PRIVATEKEY jenkins.key"
+                                      sh "chmod 400 jenkins.key"
+                                      sh 'bash ../scripts/ansible-securityhardening.sh Story'
+                               }
+                  }
+          sh 'rm -Rf aws-build-scripts'
+        }
+        }
+      stage('Ansible Deployment for Batch Manager Component') {
+       environment {
+                  stash_auth = credentials("e7f2a49d-2772-48db-8836-453ec2cea3d7")
+                AWS_DEFAULT_REGION = "ap-southeast-2"
+                AWS_PROFILE = "default"
+          }
+          when {
+                 expression
+                        {
+                            env.CHANGE_BRANCH.contains("story")
+                         }
+                }
+      steps {
+          withCredentials([string(credentialsId: 'VODAPHONE_VHA_ANSIBLEVAULT_PASSWD', variable: 'VODAPHONE_VHA_ANSIBLEVAULT_PASSWD')])
+                {
+        sh 'rm -f cd/ansible-deploy/vault.txt'
+        sh 'echo "$VODAPHONE_VHA_ANSIBLEVAULT_PASSWD" > "cd/ansible-deploy/vault.txt"'
+      }
+        sh "bash scripts/ansible-playbook.sh Story"
+      }
+    }
+}
+  post {
+        success {
+                      script {
+                        if (env.CHANGE_BRANCH.contains("task"))
+                            {
+                                currentBuild.result = 'SUCCESS'
+                                return
+                             }
+                      }
+                }
+    always {
+          script
+            {
+                   if (env.CHANGE_BRANCH.contains("story"))
+                       {
+                         dir('terraform-aws')
+                           {
+                               dir('story')
+                               {
+                                   sh 'bash ../../scripts/terraform-destroy.sh'
+                                 }
+                            }
+                        }
+             }
+          }
+
+      }
+  }

@@ -1,0 +1,57 @@
+---
+
+- name: Install 'epel-release' package through yum
+  become: yes
+  become_user: root
+  yum: pkg=epel-release state=installed
+
+- name: Install 'wget' package through yum
+  become: yes
+  become_user: root
+  yum: pkg=wget state=installed
+
+- name: Ensuring that the 'tomcat' group exists on the Migration Tool Node
+  become: yes
+  become_user: root
+  group:
+    name: tomcat
+    state: present
+
+- name: Creating the Tomcat User and Adding it to the 'Tomcat' Group
+  become: yes
+  become_user: root
+  user:
+    name: tomcat
+    shell: /bin/nologin
+    groups: tomcat
+    home: /opt/tomcat
+
+#- name: Install 'havaged' package through yum
+#  become: yes
+#  become_user: root
+#  yum: pkg=havaged state=installed
+
+
+#- name: Downloading the 'havaged 1.9' package
+#  become: yes
+#  become_user: root
+#  shell: "wget http://download-ib01.fedoraproject.org/pub/epel/7/x86_64/Packages/h/haveged-1.9.1-1.el7.x86_64.rpm"
+
+#- name: Installing the 'havaged 1.9' package
+#  become: yes
+#  become_user: root
+#  shell: "rpm -ivh haveged-1.9.1-1.el7.x86_64.rpm"
+
+#- name: "Setting the Havaged service to always start when the VM reboots"
+#  become_user: root
+#  become: yes
+#  service:
+#    name: havaged
+#    enabled: yes
+
+#- name: "Restarting the Havaged service on the Migration Tool Node"
+#  become_user: root
+#  become: yes
+#  service:
+#    name: havaged
+#    state: restarted

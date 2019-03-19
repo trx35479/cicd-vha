@@ -1,0 +1,10 @@
+terraform {
+  backend "s3" {
+    bucket  = "unico-aws-terraform-state"
+    key     = "vha/dev/terraform.tfstate"
+    region  = "ap-southeast-2"
+    profile = "default"
+    role_arn = "arn:aws:iam::279459402216:role/vha-dslave-instance-role"
+    encrypt = true
+  }
+}

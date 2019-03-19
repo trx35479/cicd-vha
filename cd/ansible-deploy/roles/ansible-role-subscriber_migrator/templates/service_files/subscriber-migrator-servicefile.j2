@@ -1,0 +1,22 @@
+[Unit]
+Description= Vodaphone Filter API Component Service File
+After=syslog.target network.target
+
+[Service]
+Type=forking
+
+#Environment=JAVA_HOME=/usr/lib/jvm/jre
+Environment=CATALINA_PID={{ subscribermigrator_application_directory }}/temp/tomcat.pid
+Environment=CATALINA_HOME={{ subscribermigrator_application_directory }}
+Environment=CATALINA_BASE={{ subscribermigrator_application_directory }}
+Environment='CATALINA_OPTS=-Xms512M -Xmx1024M -server -XX:+UseParallelGC'
+Environment='JAVA_OPTS=-Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom'
+
+ExecStart={{ subscribermigrator_application_directory }}/bin/startup.sh
+ExecStop={{ subscribermigrator_application_directory }}/bin/shutdown.sh
+
+User=tomcat
+Group=tomcat
+
+[Install]
+WantedBy=multi-user.target

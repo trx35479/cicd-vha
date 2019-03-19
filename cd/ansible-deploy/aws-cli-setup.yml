@@ -1,0 +1,52 @@
+---
+- hosts: 127.0.0.1
+  connection: local
+  gather_facts: yes
+#  become_user: root
+#  become: true
+  vars_files:
+    - environment/aws/vars/aws_vault.yml
+    - environment/aws/vars/aws_vars.yml
+  tasks:
+  ######################################################################################################################
+  #  Create SSH agent with SSH key for Jenkins user
+  ######################################################################################################################
+    - name: Establishing the SSH-Agent for Ansible
+      shell: "echo ssh-agent=$(ssh=-agent)"
+
+#    - name: "Creating the AWS-CLI-Profile File using the aws-cli-profiles template"
+#      template: "src=environment/aws/aws-cli/aws-cli-profiles dest=~/.boto mode=0664 force=yes"
+
+    - name: "Creating the ~/.ssh directory if it doesn't exist"
+      file: "path={{ item }} state=directory recurse=yes mode=0700"
+      with_items:
+        - "~/.ssh"
+
+    - name: "Removing the ~/.ssh/jenkins.key file if it exists"
+      become: yes
+      become_user: root
+      file:
+        state: absent
+        path: "~/.ssh/jenkins.key"
+
+    - name: VHA Ansible Vault | Extracting Secure Files Associated with Jenkins User
+      no_log: true
+      copy:
+        dest="{{ item.key }}"
+        content="{{ item.value.content }}"
+#        owner="{{ item.value.owner }}"
+#        group="{{ item.value.group }}"
+#        mode="{{ item.value.mode }}"
+      loop: "{{ lookup('dict', vha_secret_files) }}"
+
+    - name: VHA Ansible Vault | Jenkins User Private Key | Changing permissions to 400
+      file: "path={{item}} mode=0400"
+      with_items:
+          - ~/.ssh/jenkins.key
+
+    - name: "Creating an SSH Session/Agent and Adding the Private Key from the previous task"
+      shell: "eval $(ssh-agent) && ssh-add ~/.ssh/jenkins.key"
+
+#    - name: "Testing the Retrieval of AWS Dynamic Inventory"
+#      shell: "python ec2.py --list --refresh-cache > aws-dynamicinventory-output.txt"
+

@@ -1,0 +1,67 @@
+#!/usr/bin/env groovy
+
+pipeline {
+  agent {
+    node {
+    label 'vodaphone-vha-jenkins-dslave'
+    }
+  }
+  options {
+    timeout time: 40, unit: 'MINUTES'
+  }
+  stages {
+      stage('Cleaning the Workspace') {
+            steps {
+                step([$class: 'WsCleanup'])
+                checkout scm
+            }
+        }
+      stage('Pre Build Environment Variable File for CI/CD Pipeline Build') {
+      steps {
+        sh '/bin/cp -prf ci/config/filter-api/* .'
+        sh 'rm -rf filter-api && mkdir -p filter-api'
+        sh "/bin/cp -pr `ls | egrep -v '^filter-api\$'` filter-api/"
+       }
+    }
+      stage('Git Checkout - CICD, Common and Utilities Repo') {
+      steps {
+        sh 'rm -rf common utilities cicd'
+        sh '/bin/mkdir -p common utilities cicd'
+          dir('common') {
+            git(credentialsId: 'vodaphone-vha-keypair', url: 'ssh://git@stash.dev.unico.com.au/vod/common.git', branch: 'master')
+          }
+           dir('utilities') {
+            git(credentialsId: 'vodaphone-vha-keypair', url: 'ssh://git@stash.dev.unico.com.au/vod/utilities.git', branch: 'master')
+          }
+           dir('cicd') {
+            git(credentialsId: 'vodaphone-vha-keypair', url: 'ssh://git@stash.dev.unico.com.au/vod/cicd.git', branch: 'master')
+          }
+       }
+    }
+	 stage('Pre-Build - Docker Images - All Components') {
+      environment {
+      	nexus_auth = credentials("vodaphone-vha-nexus3")
+      }
+      steps {
+         sh 'bash cicd/scripts/pre-build.sh'
+      }
+    }
+     stage('Build & Unit Test - Filter API') {
+       environment {
+    stash_auth = credentials("e7f2a49d-2772-48db-8836-453ec2cea3d7")
+  }
+      steps {
+        sh 'bash cicd/scripts/scm-build-status.sh BUILD INPROGRESS'
+        sh 'bash cicd/scripts/build.sh'
+      }
+      post {
+        success {
+          sh 'bash cicd/scripts/scm-build-status.sh BUILD SUCCESSFUL'
+        }
+        failure {
+          sh 'bash cicd/scripts/scm-build-status.sh BUILD FAILED'
+        }
+      }
+    }
+}
+}

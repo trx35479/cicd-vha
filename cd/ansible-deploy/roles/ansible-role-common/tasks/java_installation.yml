@@ -1,0 +1,23 @@
+---
+
+- name: Install java-1.8.0-openjdk package through yum
+  become: yes
+  become_user: root
+  yum: pkg=java-1.8.0-openjdk state=installed disable_gpg_check=yes
+
+- name: Get the Implementation number for java-1.8.0-openjdk on this host
+  shell: "update-alternatives --display java | grep '^/' | awk '{print $1}' | grep 1.8.0"
+  become: yes
+  become_user: root
+  register: java_full_path
+  failed_when: False
+  changed_when: False
+
+- name: Set java-1.8.0-openjdk to be the Default Implementation of Java on this Host
+  become: yes
+  become_user: root
+  alternatives:
+    name: java
+    path: "{{ java_full_path.stdout }}"
+    link: /usr/bin/java
+  when: java_full_path is defined

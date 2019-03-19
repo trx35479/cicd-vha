@@ -1,0 +1,12 @@
+**/bin/*
+**/build/*
+**/.classpath
+**/.git
+**/.gradle
+**/.project
+**/.settings
+/build
+*.log
+.idea/
+**/.vagrant/
+**/.terraform*
