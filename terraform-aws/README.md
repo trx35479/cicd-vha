@@ -1,4 +1,5 @@
 # Terraform module
+```
 .
 ├── createImage
 │   ├── backend.tf
@@ -34,7 +35,7 @@
 │   └── variables.tf
 └── templates
     └── create_tables.sql
-
+```
 # Applying the terraform modules for VHA
 
 # oracle DB name, username and password can be included as an ad-hoc variables, otherwise the default value will be used. 
